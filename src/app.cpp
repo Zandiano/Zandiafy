@@ -17,6 +17,7 @@ namespace OBJ {
 		ma_uint64 duration = 0;
 		UINT64 id;
 		std::string path = "";
+		bool isValid = true;
 
 
 	public:
@@ -32,12 +33,13 @@ namespace OBJ {
 		void SetAuthor(std::string author) {
 			this->author = author;
 		}
-		void SetDuration(UINT64 duration) {
+		void SetDuration(ma_uint64 duration) {
 			this->duration = duration;
 		}
-		void setDuration(ma_uint64 duration) {
-			this->duration = duration;
+		void SetValidity(bool val) {
+			isValid = val;
 		}
+		
 
 		std::string GetAuthor() {
 			return this->author;
@@ -50,6 +52,9 @@ namespace OBJ {
 		}
 		std::string GetPath() {
 			return this->path;
+		}
+		bool GetValidity() {
+			return isValid;
 		}
 	};
 
@@ -102,7 +107,6 @@ namespace OBJ {
 
 	class Player {
 	private:
-		Playlist playlist = Playlist("Default", "Unknown");
 		Music currentMusic = Music("Unknown", "Unknown", "");
 		
 		ma_engine engine = { NULL };
@@ -114,25 +118,36 @@ namespace OBJ {
 		ma_uint64 currentLength = 0;
 		ma_uint64 lengthInFrames = 0;
 
+		float sampleRate = 0;
+
 		bool isPlaying = false;
+		bool isPaused = false;
+		bool loadedMusic = false;
 		UINT8 volume = 100;
 
-		float sampleRate = 0;
 
 	public:
 		void Play() {
-			if (!isPlaying) {
+			std::cout << "Play(1)" << std::endl;
+			if ((!isPlaying || isPaused) && currentMusic.GetValidity()) {
+				std::cout << "Play(2)" << std::endl;
 				if (ma_sound_start(&currentSound) != MA_SUCCESS) {
 					std::cout << "Failed to start sound: " << currentMusic.GetPath() << std::endl;
 					return;
 				}
-
+				std::cout << "Play(3)" << std::endl;
+				//ma_sound_seek_to_pcm_frame(&currentSound, cursor);
 				std::cout << "Playing -> " << currentMusic.GetName() << " by " << currentMusic.GetAuthor() << std::endl;
 			}
 		}
 
 		void Stop() {
-			if (isPlaying) {
+			if (!isPaused) {
+				currentTime = 0;
+				cursor = 0;
+			}
+
+			if (isPlaying && currentMusic.GetValidity()) {
 				if (ma_sound_stop(&currentSound) != MA_SUCCESS) {
 					std::cout << "Failed to stop sound: " << currentMusic.GetPath() << std::endl;
 					return;
@@ -141,10 +156,21 @@ namespace OBJ {
 			}
 		}
 
+		void Pause() {
+			isPaused = true;
+
+			if (isPaused) {
+				Stop();
+			}
+		}
+
 		void UpdateAudio() {
-			sampleRate = ma_engine_get_sample_rate(&engine);
-			ma_sound_get_cursor_in_pcm_frames(&currentSound, &cursor);
-			currentTime = cursor / sampleRate;
+			if (!isPaused) {
+				sampleRate = ma_engine_get_sample_rate(&engine);
+				ma_sound_get_cursor_in_pcm_frames(&currentSound, &cursor);
+				currentTime = cursor / sampleRate;
+			}
+
 			isPlaying = ma_sound_is_playing(&currentSound);
 
 			if (!isPlaying) {
@@ -156,16 +182,36 @@ namespace OBJ {
 		}
 
 		void SetCurrentMusic(Music music) {
-			ma_sound_uninit(&currentSound);
+			std::cout << "Set(1)" << std::endl;
+
 			this->currentMusic = music;
+			
+			if (!currentMusic.GetValidity()) {
+				std::cout << "Invalid music" << std::endl;
+				return;
+			}
+
+			if (loadedMusic) {
+				ma_sound_uninit(&currentSound);
+			}
+
+			std::cout << "Set(2)" << std::endl;
 
 			if (ma_sound_init_from_file(&engine, currentMusic.GetPath().c_str(), 0, NULL, NULL, &currentSound) != MA_SUCCESS) {
 				std::cout << "Failed to load sound: " << currentMusic.GetPath() << std::endl;
+				currentMusic.SetValidity(false);
+				loadedMusic = false;
+				return;
 			}
+			
+			loadedMusic = true;
+			currentMusic.SetValidity(true);
+
+			std::cout << "Set(3)" << std::endl;
 
 			ma_sound_get_length_in_pcm_frames(&currentSound, &lengthInFrames);
 			currentLength = lengthInFrames / sampleRate;
-			this->currentMusic.setDuration(currentLength);
+			this->currentMusic.SetDuration(currentLength);
 		}
 
 		Music GetCurrentMusic() {
@@ -183,6 +229,10 @@ namespace OBJ {
 		ma_engine* GetEngine() {
 			return &engine;
 		}
+
+		bool GetPlaying() {
+			return isPlaying;
+		}
 	};
 
 	class Queue {
@@ -196,22 +246,74 @@ namespace OBJ {
 		QueueItem *head = nullptr;
 		QueueItem *tail = nullptr;
 		QueueItem *current = nullptr;
+		bool nextReady = false;
+		bool prevReady = false;
+		bool isPaused = false;
+		bool tryPlaying = false;
 
 	public:
+		void UpdateQueue(Player *player) {
+			if (nextReady || prevReady) {
+				player->SetCurrentMusic(current->music);
+				player->Play();
+
+				nextReady = false;
+				prevReady = false;
+			}
+
+			if (tryPlaying) {
+				std::cout << "Try play-> " << current->music.GetName() << std::endl;
+				player->SetCurrentMusic(current->music);
+				player->Play();
+				tryPlaying = false;
+			}
+
+			if (isPaused) {
+				player->Pause();
+				isPaused = false;
+			}
+		}
+		
+		void Previous() {
+			if (!current)
+				return;
+
+			current = current->prev;
+			std::cout << "Previous-> " << current->music.GetName() << std::endl;
+			prevReady = true;
+		}
+		
+		void Next() {
+			if (!current)
+				return;
+
+			current = current->next;
+			std::cout << "Next-> " << current->music.GetName() << std::endl;
+			nextReady = true;
+		}
+
+		void Play() {
+			tryPlaying = true;
+		}
+
+		void Pause() {
+			isPaused = true;
+		}
+
 		void QueueMusic(Music music) {
 			if (tail == nullptr) {
 				tail = new QueueItem{ music, nullptr, nullptr };
 				head = tail;
 				current = tail;
 
-				std::cout << "FQueued-> " << music.GetName() << std::endl;
+				std::cout << "FQueued-> " << current->music.GetName() << std::endl;
 				return;
 			}
 			
 			QueueItem *newItem = new QueueItem{ music, nullptr, head };
 			head = newItem;
 
-			std::cout << "Queued-> " << music.GetName() << std::endl;
+			std::cout << "Queued-> " << newItem->music.GetName() << std::endl;
 		}
 
 		void RemoveMusic() {
@@ -242,7 +344,13 @@ namespace OBJ {
 		}
 
 		void QueueMusicNow(Music music) {
+			if (tail == nullptr || current == head) {
+				this->QueueMusic(music);
+			}
 
+			QueueItem* newItem = new QueueItem { music, current->next, current };
+			current->next->prev = newItem;
+			current->next = newItem;
 		}
 	};
 }
@@ -253,6 +361,7 @@ namespace App {
 	private:
 	public:
 		OBJ::Player player;
+		OBJ::Queue queue;
 
 		void Init() {
 			if (ma_engine_init(NULL, player.GetEngine()) != MA_SUCCESS)
@@ -300,16 +409,30 @@ namespace App {
 
 		ImGui::Dummy(ImVec2(0, music_Height - 80));
 
-		if (ImGui::Button("Play")) {
+		app.queue.UpdateQueue(&app.player);
+		app.player.UpdateAudio();
+		
+		if (ImGui::Button("ADD")) {
 			OBJ::Music test = OBJ::Music("20th Century Schizoid Man", "King Crimson", "..\\..\\..\\musics\\20thCenturySchizoidMan.mp3");
-			app.player.SetCurrentMusic(test);
-			app.player.Play();
+			app.queue.QueueMusic(test);
 		}
 		ImGui::SameLine();
-		if (ImGui::Button("Stop")) {
-			app.player.Stop();
+		if (ImGui::Button("Play")) {
+			app.queue.Play();
 		}
-		
+		ImGui::SameLine();
+		if (ImGui::Button("Pause")) {
+			app.queue.Pause();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("<##Prev")) {
+			app.queue.Previous();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button(">##Next")) {
+			app.queue.Next();
+		}
+
 		ImGui::SetNextItemWidth(200.0f);
 		ImGui::SliderInt("##Volume", (int*)app.player.GetVolume(), 0, 200);
 
@@ -321,12 +444,8 @@ namespace App {
 
 		ImGui::Text("%02d : %02d / %02d : %02d", (int)(currentSeconds / 60), (int)(currentSeconds % 60), (int)(totalSeconds / 60), (int)(totalSeconds % 60));
 
-		app.player.UpdateAudio();
 
 		ImGui::End();
-
-		
-
 	}
 }
 
