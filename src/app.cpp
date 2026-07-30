@@ -1,5 +1,5 @@
-#ifndef ZANDIAFY__CPP
-#define ZANDIAFY__CPP
+#ifndef _ZANDIAFY__
+#define _ZANDIAFY__
 
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
@@ -129,31 +129,34 @@ namespace OBJ {
 	public:
 		void Play() {
 			std::cout << "Play(1)" << std::endl;
-			if ((!isPlaying || isPaused) && currentMusic.GetValidity()) {
+			if ((!isPlaying || isPaused) && loadedMusic) {
+				isPaused = false;
 				std::cout << "Play(2)" << std::endl;
 				if (ma_sound_start(&currentSound) != MA_SUCCESS) {
 					std::cout << "Failed to start sound: " << currentMusic.GetPath() << std::endl;
 					return;
 				}
 				std::cout << "Play(3)" << std::endl;
-				//ma_sound_seek_to_pcm_frame(&currentSound, cursor);
+				ma_sound_seek_to_pcm_frame(&currentSound, cursor);
 				std::cout << "Playing -> " << currentMusic.GetName() << " by " << currentMusic.GetAuthor() << std::endl;
 			}
 		}
 
 		void Stop() {
+			if (!isPlaying || !loadedMusic) {
+				return;
+			}
+			
 			if (!isPaused) {
 				currentTime = 0;
 				cursor = 0;
 			}
 
-			if (isPlaying && currentMusic.GetValidity()) {
-				if (ma_sound_stop(&currentSound) != MA_SUCCESS) {
-					std::cout << "Failed to stop sound: " << currentMusic.GetPath() << std::endl;
-					return;
-				}
-				std::cout << "Stopped -> " << currentMusic.GetName() << " by " << currentMusic.GetAuthor() << std::endl;
+			if (ma_sound_stop(&currentSound) != MA_SUCCESS) {
+				std::cout << "Failed to stop sound: " << currentMusic.GetPath() << std::endl;
+				return;
 			}
+			std::cout << "Stopped -> " << currentMusic.GetName() << " by " << currentMusic.GetAuthor() << std::endl;
 		}
 
 		void Pause() {
@@ -165,13 +168,14 @@ namespace OBJ {
 		}
 
 		void UpdateAudio() {
+
+			isPlaying = ma_sound_is_playing(&currentSound);
+			
 			if (!isPaused) {
 				sampleRate = ma_engine_get_sample_rate(&engine);
 				ma_sound_get_cursor_in_pcm_frames(&currentSound, &cursor);
 				currentTime = cursor / sampleRate;
 			}
-
-			isPlaying = ma_sound_is_playing(&currentSound);
 
 			if (!isPlaying) {
 				currentTime = 0;
@@ -179,6 +183,15 @@ namespace OBJ {
 			}
 
 			ma_engine_set_volume(&engine, volume / 100.0f);
+		}
+
+		void ResetCurrent() {
+			if (!loadedMusic) {
+				return;
+			}
+			cursor = 0;
+			currentTime = 0;
+			ma_sound_seek_to_pcm_frame(&currentSound, cursor);
 		}
 
 		void SetCurrentMusic(Music music) {
@@ -222,6 +235,10 @@ namespace OBJ {
 			return this->currentTime;
 		}
 
+		ma_uint64 GetCurrentMusicTotalTime() {
+			return this->currentLength;
+		}
+
 		UINT8* GetVolume() {
 			return &this->volume;
 		}
@@ -250,12 +267,23 @@ namespace OBJ {
 		bool prevReady = false;
 		bool isPaused = false;
 		bool tryPlaying = false;
+		bool tryStop = false;
+		bool looping = false;
+
+
+		bool finishedCurrent = false;
 
 	public:
 		void UpdateQueue(Player *player) {
+			if(finishedCurrent && !player->GetPlaying()){
+				Next();
+				finishedCurrent = false;
+			}
+
 			if (nextReady || prevReady) {
-				player->SetCurrentMusic(current->music);
-				player->Play();
+				tryPlaying = true;
+
+				player->ResetCurrent();
 
 				nextReady = false;
 				prevReady = false;
@@ -263,6 +291,8 @@ namespace OBJ {
 
 			if (tryPlaying) {
 				std::cout << "Try play-> " << current->music.GetName() << std::endl;
+				player->Stop();
+				player->UpdateAudio();
 				player->SetCurrentMusic(current->music);
 				player->Play();
 				tryPlaying = false;
@@ -272,10 +302,19 @@ namespace OBJ {
 				player->Pause();
 				isPaused = false;
 			}
+
+			if (tryStop) {
+				player->Stop();
+				tryStop = false;
+			}
+
+			if (player->GetCurrentMusicTime() >= player->GetCurrentMusicTotalTime()) {
+				finishedCurrent = true;
+			}
 		}
 		
 		void Previous() {
-			if (!current)
+			if (!current || !current->prev)
 				return;
 
 			current = current->prev;
@@ -284,7 +323,7 @@ namespace OBJ {
 		}
 		
 		void Next() {
-			if (!current)
+			if (!current || !current->next)
 				return;
 
 			current = current->next;
@@ -293,11 +332,38 @@ namespace OBJ {
 		}
 
 		void Play() {
+			if (!current) {
+				return;
+			}
 			tryPlaying = true;
 		}
 
 		void Pause() {
 			isPaused = true;
+		}
+
+		void Stop() {
+			tryStop = true;
+		}
+
+		void Looping() {
+			if (!head || !tail) {
+				std::cout << "Invalid loop" << std::endl;
+				return;
+			}
+
+			looping = !looping;
+
+			if (looping) {
+				head->next = tail;
+				tail->prev = head;
+				std::cout << "Looping" << std::endl;
+			}
+			else {
+				head->next = nullptr;
+				tail->prev = nullptr;
+				std::cout << "Unlooping" << std::endl;
+			}
 		}
 
 		void QueueMusic(Music music) {
@@ -311,41 +377,46 @@ namespace OBJ {
 			}
 			
 			QueueItem *newItem = new QueueItem{ music, nullptr, head };
+			head->next = newItem;
 			head = newItem;
 
 			std::cout << "Queued-> " << newItem->music.GetName() << std::endl;
 		}
 
 		void RemoveMusic() {
-			if (!current->next) {
+			if (!current) {
 				std::cout << "No music to remove" << std::endl;
 				return;
 			}
 
 			if (current->prev) {
-				current->prev->next = current;
+				current->prev->next = current->next;
+
 				if (head == current) {
-					head == current->next;
+					head = current->next;
 				}
 			}
 			if (current->next) {
 				current->next->prev = current->prev;
 				
 				if (tail == current) {
-					tail == current->next;
+					tail = current->next;
 				}
 			}
 
-			std::cout << "Removed-> " << current->music.GetAuthor() << std::endl;
+			std::cout << "Removed-> " << current->music.GetName() << std::endl;
 
 			QueueItem *temp = current->next;
 			delete current;
 			current = temp;
+
+			Play();
 		}
 
 		void QueueMusicNow(Music music) {
 			if (tail == nullptr || current == head) {
 				this->QueueMusic(music);
+				return;
 			}
 
 			QueueItem* newItem = new QueueItem { music, current->next, current };
@@ -409,12 +480,17 @@ namespace App {
 
 		ImGui::Dummy(ImVec2(0, music_Height - 80));
 
-		app.queue.UpdateQueue(&app.player);
 		app.player.UpdateAudio();
+		app.queue.UpdateQueue(&app.player);
 		
 		if (ImGui::Button("ADD")) {
 			OBJ::Music test = OBJ::Music("20th Century Schizoid Man", "King Crimson", "..\\..\\..\\musics\\20thCenturySchizoidMan.mp3");
+			OBJ::Music test2 = OBJ::Music("I Talk To The Wind", "King Crimson", "..\\..\\..\\musics\\ITalkToTheWind.mp3");
+			OBJ::Music test3 = OBJ::Music("Test", "No one", "..\\..\\..\\musics\\test.mp3");
+
 			app.queue.QueueMusic(test);
+			app.queue.QueueMusic(test3);
+			app.queue.QueueMusic(test2);
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Play")) {
@@ -425,12 +501,20 @@ namespace App {
 			app.queue.Pause();
 		}
 		ImGui::SameLine();
+		if (ImGui::Button("X##Remove")) {
+			app.queue.RemoveMusic();
+		}
+		ImGui::SameLine();
 		if (ImGui::Button("<##Prev")) {
 			app.queue.Previous();
 		}
 		ImGui::SameLine();
 		if (ImGui::Button(">##Next")) {
 			app.queue.Next();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("~##Loop")) {
+			app.queue.Looping();
 		}
 
 		ImGui::SetNextItemWidth(200.0f);
