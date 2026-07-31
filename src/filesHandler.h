@@ -82,6 +82,10 @@ namespace Files {
 			std::filesystem::copy_file(file, folderPath / file.filename(), std::filesystem::copy_options::overwrite_existing);
 		}
 
+		std::filesystem::path GetFolderPath() {
+			return folderPath;
+		}
+
 		std::filesystem::path GetMusicPath() {
 			SetMusicPath();
 			std::wcout << musicPath << std::endl;

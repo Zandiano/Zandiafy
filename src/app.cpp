@@ -461,6 +461,19 @@ namespace App {
 		ImGui::Begin("ARQUIVOS", NULL, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize  | ImGuiWindowFlags_NoTitleBar);
 		
 		ImGui::Text("ARQUIVOS");
+		ImGui::SameLine();
+		if (ImGui::Button("+##ADDFILE")) {
+			app.fileHandler.CopyFileToFolder(app.fileHandler.GetMusicPath());
+		}
+		ImGui::Dummy(ImVec2(0, 10));
+
+
+		for (const auto& file : std::filesystem::directory_iterator(app.fileHandler.GetFolderPath())) {
+			std::string text = file.path().filename().string();
+			if (ImGui::Button(text.c_str())) {
+				app.queue.QueueMusic(OBJ::Music(text, "Random", file.path()));
+			};
+		}
 
 		ImGui::End();
 
@@ -486,13 +499,13 @@ namespace App {
 		app.player.UpdateAudio();
 		app.queue.UpdateQueue(&app.player);
 		
-		if (ImGui::Button("ADD")) {
-			app.fileHandler.CopyFileToFolder(app.fileHandler.GetMusicPath());
-			OBJ::Music test = OBJ::Music(app.fileHandler.GetFileName(), "Who", app.fileHandler.GetMusicPath());
+		//if (ImGui::Button("ADD")) {
+		//	app.fileHandler.CopyFileToFolder(app.fileHandler.GetMusicPath());
+		//	OBJ::Music test = OBJ::Music(app.fileHandler.GetFileName(), "Who", app.fileHandler.GetMusicPath());
 
-			app.queue.QueueMusic(test);
-		}
-		ImGui::SameLine();
+		//	app.queue.QueueMusic(test);
+		//}
+		//ImGui::SameLine();
 		if (ImGui::Button("Play")) {
 			app.queue.Play();
 		}
