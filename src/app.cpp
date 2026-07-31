@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include "filesHandler.h"
+#include <filesystem>
 
 namespace OBJ {
 	class Music {
@@ -16,13 +18,13 @@ namespace OBJ {
 		std::string author = "Unknown";
 		ma_uint64 duration = 0;
 		UINT64 id;
-		std::string path = "";
+		std::wstring path = L"";
 		bool isValid = true;
 
 
 	public:
 
-		Music(std::string name, std::string author, std::string path) {
+		Music(std::string name, std::string author, std::wstring path) {
 			this->name = name;
 			this->author = author;
 			this->path = path;
@@ -50,7 +52,7 @@ namespace OBJ {
 		ma_uint64 GetDuration() {
 			return this->duration;
 		}
-		std::string GetPath() {
+		std::wstring GetPath() {
 			return this->path;
 		}
 		bool GetValidity() {
@@ -107,7 +109,7 @@ namespace OBJ {
 
 	class Player {
 	private:
-		Music currentMusic = Music("Unknown", "Unknown", "");
+		Music currentMusic = Music("Unknown", "Unknown", L"");
 		
 		ma_engine engine = { NULL };
 		ma_sound currentSound = { NULL };
@@ -133,7 +135,7 @@ namespace OBJ {
 				isPaused = false;
 				std::cout << "Play(2)" << std::endl;
 				if (ma_sound_start(&currentSound) != MA_SUCCESS) {
-					std::cout << "Failed to start sound: " << currentMusic.GetPath() << std::endl;
+					std::wcout << "Failed to start sound: " << currentMusic.GetPath() << std::endl;
 					return;
 				}
 				std::cout << "Play(3)" << std::endl;
@@ -153,7 +155,7 @@ namespace OBJ {
 			}
 
 			if (ma_sound_stop(&currentSound) != MA_SUCCESS) {
-				std::cout << "Failed to stop sound: " << currentMusic.GetPath() << std::endl;
+				std::wcout << "Failed to stop sound: " << currentMusic.GetPath() << std::endl;
 				return;
 			}
 			std::cout << "Stopped -> " << currentMusic.GetName() << " by " << currentMusic.GetAuthor() << std::endl;
@@ -179,7 +181,7 @@ namespace OBJ {
 
 			if (!isPlaying) {
 				currentTime = 0;
-				currentMusic = Music("NO MUSIC", "Zandiano", "");
+				currentMusic = Music("NO MUSIC", "Zandiano", L"");
 			}
 
 			ma_engine_set_volume(&engine, volume / 100.0f);
@@ -210,8 +212,8 @@ namespace OBJ {
 
 			std::cout << "Set(2)" << std::endl;
 
-			if (ma_sound_init_from_file(&engine, currentMusic.GetPath().c_str(), 0, NULL, NULL, &currentSound) != MA_SUCCESS) {
-				std::cout << "Failed to load sound: " << currentMusic.GetPath() << std::endl;
+			if (ma_sound_init_from_file_w(&engine, currentMusic.GetPath().c_str(), 0, NULL, NULL, &currentSound) != MA_SUCCESS) {
+				std::wcout << "Failed to load sound: " << currentMusic.GetPath() << std::endl;
 				currentMusic.SetValidity(false);
 				loadedMusic = false;
 				return;
@@ -405,8 +407,8 @@ namespace OBJ {
 			}
 
 			std::cout << "Removed-> " << current->music.GetName() << std::endl;
-
-			QueueItem *temp = current->next;
+			
+			QueueItem* temp = current->next ? current->next : current->prev;
 			delete current;
 			current = temp;
 
@@ -433,6 +435,7 @@ namespace App {
 	public:
 		OBJ::Player player;
 		OBJ::Queue queue;
+		Files::fileHandler fileHandler;
 
 		void Init() {
 			if (ma_engine_init(NULL, player.GetEngine()) != MA_SUCCESS)
@@ -484,13 +487,10 @@ namespace App {
 		app.queue.UpdateQueue(&app.player);
 		
 		if (ImGui::Button("ADD")) {
-			OBJ::Music test = OBJ::Music("20th Century Schizoid Man", "King Crimson", "..\\..\\..\\musics\\20thCenturySchizoidMan.mp3");
-			OBJ::Music test2 = OBJ::Music("I Talk To The Wind", "King Crimson", "..\\..\\..\\musics\\ITalkToTheWind.mp3");
-			OBJ::Music test3 = OBJ::Music("Test", "No one", "..\\..\\..\\musics\\test.mp3");
+			app.fileHandler.CopyFileToFolder(app.fileHandler.GetMusicPath());
+			OBJ::Music test = OBJ::Music(app.fileHandler.GetFileName(), "Who", app.fileHandler.GetMusicPath());
 
 			app.queue.QueueMusic(test);
-			app.queue.QueueMusic(test3);
-			app.queue.QueueMusic(test2);
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Play")) {

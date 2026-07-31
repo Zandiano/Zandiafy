@@ -4,20 +4,13 @@
 #include <filesystem>
 #include <windows.h>
 #include <shobjidl.h>
+#include <iostream>
 
 namespace Files {
 	class fileHandler {
 	private:
 		std::filesystem::path musicPath;
-
-	public:
-		void SetMusicPath(std::filesystem::path newPath) {
-			musicPath = newPath;
-		}
-
-		std::filesystem::path GetMusicPath() {
-			return musicPath;
-		}
+		std::filesystem::path folderPath{ "..\\..\\..\\musics" };
 
 		std::filesystem::path GetFilePath() {
 			HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
@@ -27,7 +20,7 @@ namespace Files {
 				CoUninitialize();
 				return {};
 			}
-			
+
 			IFileOpenDialog* pFileOpen = nullptr;
 
 			hr = CoCreateInstance(
@@ -74,6 +67,29 @@ namespace Files {
 			CoUninitialize();
 
 			return filepath;
+		}
+
+		void SetMusicPath() {
+			musicPath = GetFilePath();
+		}
+
+	public:
+		void CopyFileToFolder(std::filesystem::path file) {
+			if (!std::filesystem::exists(file)) {
+				return;
+			}
+
+			std::filesystem::copy_file(file, folderPath / file.filename(), std::filesystem::copy_options::overwrite_existing);
+		}
+
+		std::filesystem::path GetMusicPath() {
+			SetMusicPath();
+			std::wcout << musicPath << std::endl;
+			return musicPath;
+		}
+
+		std::string GetFileName() {
+			return musicPath.filename().string();
 		}
 	};
 }
