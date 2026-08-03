@@ -36,6 +36,10 @@ namespace Files {
 				return {};
 			}
 
+			COMDLG_FILTERSPEC filtros[] = { {L"Audio", L"*.mp3;*.wav"}, {L"Todos Arquivos", L"*.*"} };
+
+			pFileOpen->SetFileTypes(2, filtros);
+
 			hr = pFileOpen->Show(NULL);
 
 			if (FAILED(hr)) {

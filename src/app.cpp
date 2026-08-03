@@ -3,13 +3,16 @@
 
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
-
 #include "imgui.h"
+
 #include <string>
 #include <vector>
 #include <iostream>
-#include "filesHandler.h"
 #include <filesystem>
+
+#include "filesHandler.h"
+
+#define EMPTY_MUSIC Music("","",L"")
 
 namespace OBJ {
 	class Music {
@@ -425,7 +428,45 @@ namespace OBJ {
 			current->next->prev = newItem;
 			current->next = newItem;
 		}
+
+		OBJ::Music* GetCurrentMusic() {
+			if (!current || !current->next) {
+				return nullptr;
+			}
+			return &current->next->music;
+		}
+
+		OBJ::Music* GetNextMusic() {
+			if (!current) {
+				return nullptr;
+			}
+			return &current->music;
+		}
+
+		OBJ::Music* GetPreviousMusic() {
+			if (!current || !current->prev) {
+				return nullptr;
+			}
+			return &current->prev->music;
+		}
 	};
+}
+
+namespace AUXFUNCS {
+	void MusicDiscs(ImDrawList* draw, ImVec2 circle_center, float radius, OBJ::Music* music, int tag) {
+		
+		ImGui::SetCursorPos(circle_center);
+		draw->AddCircleFilled(ImGui::GetCursorScreenPos(), radius, IM_COL32(255, 0, 0, 255));
+		draw->AddCircleFilled(ImGui::GetCursorScreenPos(), radius * 0.4f, IM_COL32(50, 50, 50, 100));
+		
+		if (music == nullptr) {
+			return;
+		}
+
+		std::string disc_name = music->GetName().c_str();
+		ImGui::SetCursorPos(ImVec2(circle_center.x - ImGui::CalcTextSize(disc_name.c_str()).x / 2.0f, circle_center.y));
+		ImGui::Text(disc_name.c_str());
+	}
 }
 
 namespace App {
@@ -490,22 +531,19 @@ namespace App {
 		
 		ImDrawList* draw = ImGui::GetWindowDrawList();
 
-		ImVec2 music_circleCenter = ImVec2(music_PosX + music_Width / 2, music_PosY + music_Height / 2);
-		draw->AddCircleFilled(music_circleCenter, 100.0f, IM_COL32(255, 0, 0, 255));
-		draw->AddCircleFilled(music_circleCenter, 40.0f, IM_COL32(50, 50, 50, 100));
+		ImVec2 music_circleCenter = ImVec2(music_Width / 2, music_Height / 2);
+		AUXFUNCS::MusicDiscs(draw, music_circleCenter, 100.0f, app.queue.GetCurrentMusic(), 0);
+		
+		AUXFUNCS::MusicDiscs(draw, ImVec2(music_circleCenter.x + 160, music_circleCenter.y + 20), 50.0f, app.queue.GetNextMusic(), 1);
 
-		ImGui::Dummy(ImVec2(0, music_Height - 80));
+		AUXFUNCS::MusicDiscs(draw, ImVec2(music_circleCenter.x - 160, music_circleCenter.y + 20), 50.0f, app.queue.GetPreviousMusic(), 2);
+
+		ImGui::SetCursorPos(ImVec2(5, music_Height - 75));
+		ImGui::Dummy(ImVec2(0,0));
 
 		app.player.UpdateAudio();
 		app.queue.UpdateQueue(&app.player);
-		
-		//if (ImGui::Button("ADD")) {
-		//	app.fileHandler.CopyFileToFolder(app.fileHandler.GetMusicPath());
-		//	OBJ::Music test = OBJ::Music(app.fileHandler.GetFileName(), "Who", app.fileHandler.GetMusicPath());
 
-		//	app.queue.QueueMusic(test);
-		//}
-		//ImGui::SameLine();
 		if (ImGui::Button("Play")) {
 			app.queue.Play();
 		}
@@ -530,8 +568,11 @@ namespace App {
 			app.queue.Looping();
 		}
 
+		UINT8 max = 200;
+		UINT8 min = 0;
+
 		ImGui::SetNextItemWidth(200.0f);
-		ImGui::SliderInt("##Volume", (int*)app.player.GetVolume(), 0, 200);
+		ImGui::SliderScalar("##Volume", ImGuiDataType_U8, (UINT8*) app.player.GetVolume(), &min, &max);
 
 		ImGui::Text(app.player.GetCurrentMusic().GetName().c_str());
 		ImGui::SameLine();
